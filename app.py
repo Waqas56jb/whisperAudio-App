@@ -36,6 +36,9 @@ st.title("🎧 Audio Transcription with Translation")
 add_vertical_space(1)
 
 # Input Options
+uploaded_file = None
+youtube_url = None
+
 data_source = st.radio("Select input type:", ["Upload Audio", "YouTube Video URL"])
 
 if data_source == "Upload Audio":
@@ -48,49 +51,57 @@ languages = {"English": "en", "Urdu": "ur", "French": "fr", "Spanish": "es", "Ge
 selected_language = st.selectbox("🌎 Select a language for translation", list(languages.keys()))
 
 # Processing
-if uploaded_file or youtube_url:
+if uploaded_file is not None or (youtube_url and youtube_url.strip()):
     with st.spinner("🔄 Processing..."):
-        if data_source == "YouTube Video URL":
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(youtube_url, download=True)
-                audio_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3").replace(".mp4", ".mp3")
-        else:
-            temp_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
-            with open(temp_file_path, "wb") as f:
-                f.write(uploaded_file.read())
-            audio_path = temp_file_path
+        try:
+            if data_source == "YouTube Video URL" and youtube_url.strip():
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }],
+                    'outtmpl': '%(title)s.%(ext)s',
+                }
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info_dict = ydl.extract_info(youtube_url, download=True)
+                    audio_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3").replace(".mp4", ".mp3")
+            elif uploaded_file is not None:
+                temp_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
+                with open(temp_file_path, "wb") as f:
+                    f.write(uploaded_file.read())
+                audio_path = temp_file_path
+            else:
+                st.error("❌ Please provide a valid YouTube URL or upload an audio file.")
+                st.stop()
 
-        # Transcription
-        model = WhisperModel("small", compute_type="int8")
-        segments, _ = model.transcribe(audio_path)
-        transcript = "\n".join(segment.text for segment in segments)
-        st.subheader("📝 Generated Transcript:")
-        st.text_area("Transcript", transcript, height=200)
+            # Transcription
+            model = WhisperModel("small", compute_type="int8")
+            segments, _ = model.transcribe(audio_path)
+            transcript = "\n".join(segment.text for segment in segments)
+            st.subheader("📝 Generated Transcript:")
+            st.text_area("Transcript", transcript, height=200)
 
-        if st.button("Translate Transcript"):
-            translator = Translator()
-            translated_text = translator.translate(transcript, dest=languages[selected_language]).text
-            st.subheader(f"🌍 Translated Transcript ({selected_language}):")
-            st.text_area("Translation", translated_text, height=200)
+            if st.button("Translate Transcript"):
+                translator = Translator()
+                translated_text = translator.translate(transcript, dest=languages[selected_language]).text
+                st.subheader(f"🌍 Translated Transcript ({selected_language}):")
+                st.text_area("Translation", translated_text, height=200)
 
-            with st.spinner("🎙️ Generating translated speech..."):
-                tts = gTTS(translated_text, lang=languages[selected_language])
-                translated_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
-                tts.save(translated_audio_path)
-                st.audio(translated_audio_path, format="audio/mp3")
-                st.download_button("📥 Download Translated Speech", open(translated_audio_path, "rb"), file_name="translated_audio.mp3", mime="audio/mp3")
+                with st.spinner("🎙️ Generating translated speech..."):
+                    tts = gTTS(translated_text, lang=languages[selected_language])
+                    translated_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
+                    tts.save(translated_audio_path)
+                    st.audio(translated_audio_path, format="audio/mp3")
+                    st.download_button("📥 Download Translated Speech", open(translated_audio_path, "rb"), file_name="translated_audio.mp3", mime="audio/mp3")
 
-        # Download options
-        st.download_button("📥 Download Transcript", transcript, file_name="transcript.txt")
-        st.download_button(f"📥 Download Translation ({selected_language})", translated_text, file_name="translation.txt")
+            # Download options
+            st.download_button("📥 Download Transcript", transcript, file_name="transcript.txt")
+            st.download_button(f"📥 Download Translation ({selected_language})", translated_text, file_name="translation.txt")
+
+        except Exception as e:
+            st.error(f"⚠️ An error occurred: {e}")
 
 st.markdown("---")
 st.caption("🚀 Built with Streamlit, Faster-Whisper, Google Translate API & yt-dlp")
