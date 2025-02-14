@@ -1,107 +1,90 @@
 import streamlit as st
 import os
 import tempfile
+import whisper
 import yt_dlp
-from faster_whisper import WhisperModel
 from googletrans import Translator
 from gtts import gTTS
-from streamlit_extras.add_vertical_space import add_vertical_space
 
-# Define color themes
-color_themes = {
-    "Sunset Glow": ["#ff9a9e", "#fad0c4", "#ffdde1"],
-    "Ocean Breeze": ["#00c6fb", "#005bea", "#a8c0ff"],
-    "Forest Mist": ["#d4fc79", "#96e6a1", "#11998e"],
-    "Midnight Sky": ["#232526", "#414345", "#1e3c72"],
-    "Royal Elegance": ["#141e30", "#243b55", "#3a6073"]
-}
+# Load Whisper Model
+model = whisper.load_model("base")
+translator = Translator()
 
-# Streamlit UI Configuration
-st.set_page_config(page_title="🎙️ Transcription & Translation", layout="wide")
+def download_youtube_audio(url):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'outtmpl': 'downloaded_audio.%(ext)s'
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return 'downloaded_audio.mp3'
 
-# Theme Selection
-theme_choice = st.selectbox("🎨 Select a Theme", list(color_themes.keys()))
-selected_colors = color_themes[theme_choice]
+def transcribe_audio(file_path):
+    result = model.transcribe(file_path)
+    return result['text']
 
-st.markdown(
-    f"""
-    <style>
-        body {{background: linear-gradient(45deg, {', '.join(selected_colors)});}}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+def translate_text(text, target_lang):
+    translated = translator.translate(text, dest=target_lang)
+    return translated.text
 
-st.title("🎧 Audio Transcription with Translation")
-add_vertical_space(1)
+def text_to_speech(text, lang):
+    tts = gTTS(text=text, lang=lang)
+    tts.save("translated_audio.mp3")
+    return "translated_audio.mp3"
 
-# Input Options
-uploaded_file = None
-youtube_url = None
+# Streamlit UI
+st.title("🎙️ Audio Transcription & Translation")
 
-data_source = st.radio("Select input type:", ["Upload Audio", "YouTube Video URL"])
+option = st.radio("Choose an option:", ("Paste YouTube URL", "Upload Audio File"))
 
-if data_source == "Upload Audio":
-    uploaded_file = st.file_uploader("📂 Upload an audio file", type=["mp3", "wav", "m4a"])
-elif data_source == "YouTube Video URL":
-    youtube_url = st.text_input("📺 Enter YouTube Video URL")
+file_path = None
+if option == "Paste YouTube URL":
+    youtube_url = st.text_input("Enter YouTube URL:")
+    if youtube_url:
+        with st.spinner("Downloading and processing..."):
+            file_path = download_youtube_audio(youtube_url)
+            st.session_state['file_path'] = file_path
+            st.success("Download complete! Now generate transcript.")
+        if st.button("Generate Transcript"):
+            with st.spinner("Processing audio..."):
+                transcript = transcribe_audio(st.session_state['file_path'])
+                st.session_state['transcript'] = transcript
+                st.success("Transcription complete!")
+                st.text_area("Transcript:", transcript, height=200)
 
-# Language Selection
-languages = {"English": "en", "Urdu": "ur", "French": "fr", "Spanish": "es", "German": "de"}
-selected_language = st.selectbox("🌎 Select a language for translation", list(languages.keys()))
+elif option == "Upload Audio File":
+    uploaded_file = st.file_uploader("Upload your audio file", type=["mp3", "wav", "m4a"])
+    if uploaded_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
+            temp_file.write(uploaded_file.read())
+            file_path = temp_file.name
+        if st.button("Generate Transcript"):
+            with st.spinner("Processing audio..."):
+                transcript = transcribe_audio(file_path)
+                st.session_state['transcript'] = transcript
+                st.success("Transcription complete!")
+                st.text_area("Transcript:", transcript, height=200)
 
-# Processing
-if uploaded_file is not None or (youtube_url and youtube_url.strip()):
-    with st.spinner("🔄 Processing..."):
-        try:
-            if data_source == "YouTube Video URL" and youtube_url.strip():
-                ydl_opts = {
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192',
-                    }],
-                    'outtmpl': '%(title)s.%(ext)s',
-                }
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info_dict = ydl.extract_info(youtube_url, download=True)
-                    audio_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3").replace(".mp4", ".mp3")
-            elif uploaded_file is not None:
-                temp_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
-                with open(temp_file_path, "wb") as f:
-                    f.write(uploaded_file.read())
-                audio_path = temp_file_path
-            else:
-                st.error("❌ Please provide a valid YouTube URL or upload an audio file.")
-                st.stop()
+if 'transcript' in st.session_state:
+    st.subheader("Translate Transcript")
+    languages = {"English": "en", "French": "fr", "Spanish": "es", "German": "de", "Urdu": "ur"}
+    selected_lang = st.selectbox("Select Language:", list(languages.keys()))
+    if st.button("Translate"):
+        with st.spinner("Translating..."):
+            translated_text = translate_text(st.session_state['transcript'], languages[selected_lang])
+            st.session_state['translated_text'] = translated_text
+            st.success("Translation complete!")
+            st.text_area("Translated Text:", translated_text, height=200)
 
-            # Transcription
-            model = WhisperModel("small", compute_type="int8")
-            segments, _ = model.transcribe(audio_path)
-            transcript = "\n".join(segment.text for segment in segments)
-            st.subheader("📝 Generated Transcript:")
-            st.text_area("Transcript", transcript, height=200)
-
-            if st.button("Translate Transcript"):
-                translator = Translator()
-                translated_text = translator.translate(transcript, dest=languages[selected_language]).text
-                st.subheader(f"🌍 Translated Transcript ({selected_language}):")
-                st.text_area("Translation", translated_text, height=200)
-
-                with st.spinner("🎙️ Generating translated speech..."):
-                    tts = gTTS(translated_text, lang=languages[selected_language])
-                    translated_audio_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3").name
-                    tts.save(translated_audio_path)
-                    st.audio(translated_audio_path, format="audio/mp3")
-                    st.download_button("📥 Download Translated Speech", open(translated_audio_path, "rb"), file_name="translated_audio.mp3", mime="audio/mp3")
-
-            # Download options
-            st.download_button("📥 Download Transcript", transcript, file_name="transcript.txt")
-            st.download_button(f"📥 Download Translation ({selected_language})", translated_text, file_name="translation.txt")
-
-        except Exception as e:
-            st.error(f"⚠️ An error occurred: {e}")
-
-st.markdown("---")
-st.caption("🚀 Built with Streamlit, Faster-Whisper, Google Translate API & yt-dlp")
+if 'translated_text' in st.session_state:
+    st.subheader("Generate Audio")
+    if st.button("Generate Audio"):
+        with st.spinner("Generating audio..."):
+            audio_file = text_to_speech(st.session_state['translated_text'], languages[selected_lang])
+            st.success("Audio generation complete!")
+            st.audio(audio_file, format='audio/mp3')
