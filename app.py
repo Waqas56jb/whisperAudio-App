@@ -5,7 +5,6 @@ import yt_dlp
 from faster_whisper import WhisperModel
 from googletrans import Translator
 from gtts import gTTS
-from moviepy.editor import AudioFileClip
 from streamlit_extras.add_vertical_space import add_vertical_space
 
 # Define color themes
@@ -33,16 +32,14 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-st.title("🎧 Audio & Video Transcription with Translation")
+st.title("🎧 Audio Transcription with Translation")
 add_vertical_space(1)
 
 # Input Options
-data_source = st.radio("Select input type:", ["Upload Audio", "Upload Video", "YouTube Video URL"])
+data_source = st.radio("Select input type:", ["Upload Audio", "YouTube Video URL"])
 
 if data_source == "Upload Audio":
     uploaded_file = st.file_uploader("📂 Upload an audio file", type=["mp3", "wav", "m4a"])
-elif data_source == "Upload Video":
-    uploaded_file = st.file_uploader("📂 Upload a video file", type=["mp4", "avi", "mov"])
 elif data_source == "YouTube Video URL":
     youtube_url = st.text_input("📺 Enter YouTube Video URL")
 
@@ -65,12 +62,6 @@ if uploaded_file or youtube_url:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info_dict = ydl.extract_info(youtube_url, download=True)
                 audio_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3").replace(".mp4", ".mp3")
-        elif data_source == "Upload Video":
-            temp_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-            with open(temp_file_path, "wb") as f:
-                f.write(uploaded_file.read())
-            audio_path = temp_file_path.replace(".mp4", ".mp3")
-            AudioFileClip(temp_file_path).audio.write_audiofile(audio_path)
         else:
             temp_file_path = tempfile.NamedTemporaryFile(delete=False, suffix=".wav").name
             with open(temp_file_path, "wb") as f:
