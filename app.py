@@ -57,14 +57,19 @@ st.title("🎙️ Audio Transcription & Translation")
 
 option = st.radio("Choose an option:", ("Paste YouTube URL", "Upload Audio File"))
 
-file_path = None
+if "file_path" not in st.session_state:
+    st.session_state["file_path"] = None
+if "transcript" not in st.session_state:
+    st.session_state["transcript"] = None
+if "translated_text" not in st.session_state:
+    st.session_state["translated_text"] = None
+
 if option == "Paste YouTube URL":
     youtube_url = st.text_input("Enter YouTube URL:")
     if youtube_url and st.button("Download & Process"):
         with st.spinner("Downloading..."):
-            file_path = download_youtube_audio(youtube_url)
-            if file_path:
-                st.session_state['file_path'] = file_path
+            st.session_state["file_path"] = download_youtube_audio(youtube_url)
+            if st.session_state["file_path"]:
                 st.success("Download complete!")
 
 elif option == "Upload Audio File":
@@ -72,35 +77,33 @@ elif option == "Upload Audio File":
     if uploaded_file:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as temp_file:
             temp_file.write(uploaded_file.read())
-            file_path = temp_file.name
-            st.session_state['file_path'] = file_path
+            st.session_state["file_path"] = temp_file.name
+        st.success("File uploaded successfully!")
 
-if 'file_path' in st.session_state and st.button("Generate Transcript"):
+if st.session_state["file_path"] and st.button("Generate Transcript"):
     with st.spinner("Processing audio..."):
-        transcript = transcribe_audio(st.session_state['file_path'])
-        if transcript:
-            st.session_state['transcript'] = transcript
+        st.session_state["transcript"] = transcribe_audio(st.session_state["file_path"])
+        if st.session_state["transcript"]:
             st.success("Transcription complete!")
-            st.text_area("Transcript:", transcript, height=200)
+            st.text_area("Transcript:", st.session_state["transcript"], height=200)
 
-if 'transcript' in st.session_state:
+if st.session_state["transcript"]:
     st.subheader("Translate Transcript")
     languages = {"English": "en", "French": "fr", "Spanish": "es", "German": "de", "Urdu": "ur"}
     selected_lang = st.selectbox("Select Language:", list(languages.keys()))
 
     if st.button("Translate"):
         with st.spinner("Translating..."):
-            translated_text = translate_text(st.session_state['transcript'], languages[selected_lang])
-            if translated_text:
-                st.session_state['translated_text'] = translated_text
+            st.session_state["translated_text"] = translate_text(st.session_state["transcript"], languages[selected_lang])
+            if st.session_state["translated_text"]:
                 st.success("Translation complete!")
-                st.text_area("Translated Text:", translated_text, height=200)
+                st.text_area("Translated Text:", st.session_state["translated_text"], height=200)
 
-if 'translated_text' in st.session_state:
+if st.session_state["translated_text"]:
     st.subheader("Generate Audio")
     if st.button("Generate Audio"):
         with st.spinner("Generating audio..."):
-            audio_file = text_to_speech(st.session_state['translated_text'], languages[selected_lang])
+            audio_file = text_to_speech(st.session_state["translated_text"], languages[selected_lang])
             if audio_file:
                 st.success("Audio generation complete!")
                 st.audio(audio_file, format='audio/mp3')
